@@ -31,10 +31,10 @@ A production-ready Retrieval-Augmented Generation (RAG) engine combining **USear
 │                                      │                      │
 │                                      ▼                      │
 │                       ┌──────────────────────────────────┐ │
-│                       │      Embedding Provider          │ │
-│                       │  • OpenAI text-embedding-3-large │ │
-│                       │  • Batched API calls             │ │
-│                       │  • Retry with backoff            │ │
+│                       │      Embedding Providers         │ │
+│                       │  • OpenAI / HF / Jina            │ │
+│                       │  • Batched calls + retry         │ │
+│                       │  • LRU cache                     │ │
 │                       └──────────────┬───────────────────┘ │
 │                                      │                      │
 │              ┌───────────────────────┴────────────────┐    │
@@ -60,15 +60,47 @@ A production-ready Retrieval-Augmented Generation (RAG) engine combining **USear
 
 ## Installation
 
+### From source (uv)
+
 ```bash
-pip install usearch "openai>=1.0.0" langchain-community langchain-core \
-    beautifulsoup4 pymupdf requests tenacity numpy
+uv sync --frozen
+```
+
+Optional extras:
+
+```bash
+# REST API server (FastAPI + Uvicorn)
+uv sync --frozen --extra api
+
+# Local embeddings (sentence-transformers)
+uv sync --frozen --extra huggingface
+
+# Dev tools (ruff/pytest/mypy)
+uv sync --frozen --extra dev
+```
+
+### With pip
+
+```bash
+pip install -e .
+# Optional extras:
+#   pip install -e ".[api,huggingface,dev]"
+```
+
+### Environment variables
+
+```bash
+export OPENAI_API_KEY="sk-..."   # required for OpenAI embeddings (default)
+export HF_TOKEN="hf_..."         # optional (private HF models / rate limits)
+export JINA_API_KEY="jina_..."   # required for Jina embeddings
 ```
 
 ## Quick Start
 
+By default, Pegasus uses **OpenAI embeddings**. Set `OPENAI_API_KEY` (or pass `openai_api_key=...`).
+
 ```python
-from pegasus_v2 import Pegasus, load_sources, create_pegasus
+from pegasus import create_pegasus, load_sources
 
 # Create engine with defaults
 pegasus = create_pegasus("myrag.db", "myrag.usearch")
@@ -102,10 +134,30 @@ results = pegasus.search(
 pegasus.close()
 ```
 
+## Multi-Provider Embeddings
+
+Pegasus supports multiple embedding providers:
+
+- **OpenAI** (default, requires `OPENAI_API_KEY`)
+- **HuggingFace** via `sentence-transformers` (local, free; optional `HF_TOKEN`)
+- **Jina AI** (requires `JINA_API_KEY`)
+
+For the simplest provider switching experience, use the high-level client:
+
+```python
+from pegasus import create_client
+
+with create_client(provider="huggingface", model="all-MiniLM-L6-v2") as client:
+    client.ingest(["hello world", "machine learning is fun"], corpus="demo", show_progress=False)
+    results = client.search("machine learning", k=3, mode="vector")
+    for r in results:
+        print(f"[{r.score:.3f}] {r.content[:80]}...")
+```
+
 ## Configuration
 
 ```python
-from pegasus_v2 import Pegasus, PegasusConfig
+from pegasus import Pegasus, PegasusConfig
 
 config = PegasusConfig(
     # Embedding settings
@@ -180,6 +232,51 @@ results = pegasus.search(
 )
 ```
 
+## Examples
+
+See `examples/` for runnable scripts:
+
+```bash
+# Full RAG pipeline (requires OPENAI_API_KEY)
+uv run python examples/01_basic_rag.py
+
+# Multi-provider embeddings (local HuggingFace + optional API providers)
+uv sync --frozen --extra huggingface
+uv run python examples/02_multi_provider.py
+```
+
+## CLI
+
+Pegasus ships a small CLI (installed as `pegasus`):
+
+```bash
+pegasus --help
+
+# Demo (requires OPENAI_API_KEY)
+pegasus demo
+
+# Serve REST API (requires OPENAI_API_KEY and: uv sync --frozen --extra api)
+pegasus serve --port 8000
+
+# Show stats (requires OPENAI_API_KEY)
+pegasus stats
+```
+
+Tip: global options like `--db` and `--index` must come **before** the subcommand:
+
+```bash
+pegasus --db my.db --index my.usearch demo
+```
+
+## LLM Re-ranking (optional)
+
+```python
+from pegasus import rerank_results
+
+# Requires OPENAI_API_KEY
+reranked = rerank_results("my query", results, top_n=5, model="gpt-4o-mini")
+```
+
 ## Memory Efficiency
 
 Using `dtype="f16"` provides **2x memory savings** with minimal recall loss:
@@ -200,7 +297,10 @@ For large indexes, use memory-mapped loading to avoid loading the entire index i
 ```python
 # In your production code
 pegasus = Pegasus(config)
-pegasus._init_index(view_only=True)  # Memory-map instead of load
+
+# Memory-map instead of fully loading the index (advanced)
+# Uses USearchIndex.restore(..., view=True) under the hood.
+pegasus.index_manager.index = pegasus.index_manager._init_index(view_only=True)
 ```
 
 ### Multi-Index for Billion-Scale
@@ -227,9 +327,16 @@ multi = Indexes(paths=["shard_0.usearch", "shard_1.usearch", ...])
 
 **Methods:**
 - `ingest(docs, corpus, ...)` — Ingest documents
-- `search(query, k, mode, ...)` — Search for relevant chunks  
+- `search(query, k, mode, ...)` — Search for relevant chunks
 - `delete_corpus(corpus)` — Remove all chunks in a corpus
+- `delete_chunk(chunk_id)` — Delete a single chunk (metadata + FTS; note: vector remains in index)
+- `delete_by_doc_id(doc_id)` — Delete all chunks for a document
+- `update_chunk(chunk_id, content)` — Update a chunk (re-embeds)
+- `get_chunk(chunk_id)` — Fetch one chunk by ID
+- `get_chunks_by_doc_id(doc_id)` — Fetch all chunks for a document
 - `list_corpora()` — List all corpora with stats
+- `export_corpus(corpus, output_path)` — Export a corpus to JSONL
+- `import_corpus(input_path, corpus=None, ...)` — Import a corpus from JSONL
 - `get_stats()` — Get engine statistics
 - `save()` — Persist index to disk
 - `close()` — Close connections
