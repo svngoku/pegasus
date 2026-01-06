@@ -50,6 +50,14 @@ from .storage import MetadataStore
 from .search import SearchEngine
 from .pegasus import Pegasus, create_pegasus
 from .reranker import LLMReranker, rerank_results
+from .integration import (
+    PegasusClient,
+    PegasusClientConfig,
+    EmbeddingConfig,
+    create_client,
+    quick_search,
+    check_installation,
+)
 
 __version__ = "2.1.0"
 __all__ = [
@@ -76,4 +84,11 @@ __all__ = [
     # Re-ranking
     "LLMReranker",
     "rerank_results",
+    # Integration (PyPI client)
+    "PegasusClient",
+    "PegasusClientConfig",
+    "EmbeddingConfig",
+    "create_client",
+    "quick_search",
+    "check_installation",
 ]
