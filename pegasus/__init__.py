@@ -1,3 +1,9 @@
+# Set USER_AGENT early to suppress langchain warning
+import os as _os
+if not _os.environ.get("USER_AGENT"):
+    _os.environ["USER_AGENT"] = "pegasus-rag/2.1.0"
+del _os
+
 """
 Pegasus v2 — High-Performance RAG Engine with USearch + SQLite
 
