@@ -6,6 +6,33 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
+# FTS5 special characters that need escaping
+FTS5_SPECIAL_CHARS = set('"(){}[]+-*^~:\'?&|!')
+
+
+def escape_fts5_query(query: str) -> str:
+    """Escape a query string for safe FTS5 MATCH usage.
+    
+    FTS5 has special syntax characters that cause syntax errors when used
+    in queries. This function escapes them by wrapping each token in double
+    quotes and escaping any internal double quotes.
+    """
+    if not query or not query.strip():
+        return '""'
+    
+    # Check if query contains any special characters
+    has_special = any(c in FTS5_SPECIAL_CHARS for c in query)
+    
+    if not has_special:
+        # Simple query without special chars - return as-is
+        return query
+    
+    # Escape by wrapping in double quotes
+    # Double any existing double quotes inside
+    escaped = query.replace('"', '""')
+    return f'"{escaped}"'
+
+
 class MetadataStore:
     """Manages SQLite metadata storage and FTS5 full-text search."""
     
@@ -96,13 +123,16 @@ class MetadataStore:
     
     def search_fts(self, query: str, k: int = 10, corpus: Optional[str] = None) -> List[Dict[str, Any]]:
         """Full-text search using FTS5."""
+        # Escape special FTS5 characters to prevent syntax errors
+        safe_query = escape_fts5_query(query)
+        
         sql = """
             SELECT c.*, fts.rank
             FROM chunks c
             JOIN chunks_fts fts ON c.id = fts.rowid
             WHERE chunks_fts MATCH ?
         """
-        params = [query]
+        params = [safe_query]
         
         if corpus:
             sql += " AND c.corpus = ?"
