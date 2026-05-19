@@ -1,0 +1,23 @@
+Nixpacks Deployment Reference for Pegasus
+=========================================
+
+Nixpacks can build Pegasus as a production API server using our FastAPI wrapper.
+
+Build Command:
+--------------
+`nixpacks build . --name pegasus-service`
+
+Standard Nixpacks configuration:
+--------------------------------
+Nixpacks will auto-detect Python, install dependencies via `uv pip install`, and package the container.
+
+Environment Variables:
+----------------------
+- `OPENAI_API_KEY`: Required if using OpenAI embeddings.
+- `PORT`: Server port (defaults to 8000).
+- `HOST`: Server interface (defaults to 0.0.0.0).
+
+Start Command:
+--------------
+`uv run uvicorn pegasus.api:main --host 0.0.0.0 --port 8000`
+(Or setting the entrypoint in `pyproject.toml` script target).

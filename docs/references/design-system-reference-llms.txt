@@ -1,0 +1,20 @@
+Pegasus LLM Reference Manual
+===========================
+
+Pegasus is organized into a highly decoupled, composable set of components:
+
+Core Exports:
+-------------
+- `PegasusConfig`: Standard dataclass for embedding, search, and storage configurations.
+- `PegasusDoc`: Input document model containing `text`, `metadata`, and stable `doc_id`.
+- `SearchResult`: Data structure returned from search operations, containing `content`, `score`, and matching metadata.
+- `Pegasus`: Main orchestrator coordinating storage, index, and query.
+
+Storage details:
+----------------
+- `MetadataStore`: Runs an SQLite database with dynamic FTS5 search. Queries are sanitised using `escape_fts5_query`.
+- `VectorIndexManager`: Controls the USearch index, supporting Cosine, Inner Product, and L2 square metrics. Holds vectors as `f16`, `f32`, `bf16`, or `i8`.
+
+Factory:
+--------
+- `create_pegasus(db_path, index_path, **kwargs) -> Pegasus`: Fast helper to instantiate a Pegasus engine with standard settings.

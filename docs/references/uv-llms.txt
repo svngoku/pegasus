@@ -1,0 +1,19 @@
+UV Package Manager Cheat Sheet for Pegasus
+==========================================
+
+Pegasus uses `uv` for lightning-fast Python dependency management.
+
+Core commands:
+--------------
+- Syncing and installing dependencies:
+  `uv sync --all-extras` (synchronizes package + dev, api, huggingface deps)
+- Adding packages:
+  `uv add <package>`
+  `uv add <package> --dev` (for dev dependencies)
+- Running tests or commands in the managed venv:
+  `uv run pytest`
+  `uv run ruff check .`
+- Upgrading lockfiles:
+  `uv lock --upgrade`
+- Launching Python REPL inside venv:
+  `uv run python`
