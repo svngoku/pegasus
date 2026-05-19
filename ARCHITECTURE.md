@@ -42,139 +42,100 @@ Each module has **exactly one reason to change**:
 
 ## Component Diagram
 
-```
-┌─────────────────────────────────────────────────┐
-│              Pegasus (Main)                     │
-│  - Orchestrates all components                  │
-│  - Manages threading with RLock                 │
-│  - Exposes high-level API (ingest, search)     │
-└──────────┬──────────────────────────────────────┘
-           │
-    ┌──────┴────────┬───────────┬─────────┐
-    │               │           │         │
-    v               v           v         v
-┌────────┐  ┌──────────┐  ┌──────────┐ ┌────────────┐
-│Embedding    SearchEngine │Config   │ │MetadataStore
-│Provider     │           │         │ │
-│             │          │         │ └────────────┐
-│             │          │         │              │
-│  OpenAI API │   ┌─────┴─────┬───┴──┐      SQLite│
-│             │   │           │      │       FTS5
-│    Retry    │   v           v      v
-│  + Batch    │┌────────┐┌────────┬──────┐
-│             ││Vector  ││Keyword │Config │
-│             ││Search  ││Search  │      │
-│             ││        ││        │      │
-└─────────────┤├────────┤├────────┼──────┤
-              ││       ││        │      │
-              │└────────┘└────────┴──────┘
-              │
-              v
-         ┌─────────────┐
-         │VectorIndex  │
-         │Manager      │
-         │             │
-         │ USearch     │
-         │ HNSW        │
-         └─────────────┘
+```mermaid
+graph TD
+    classDef main fill:#d1e7dd,stroke:#0f5132,stroke-width:2px;
+    classDef comp fill:#cfe2ff,stroke:#084298,stroke-width:1px;
+    classDef ext fill:#f8f9fa,stroke:#212529,stroke-width:1px,stroke-dasharray: 5 5;
+
+    Pegasus["Pegasus (Main Orchestrator)<br/>- Orchestrates all components<br/>- Manages threading with RLock<br/>- Exposes ingest() and search()"]:::main
+
+    Pegasus --> EmbeddingProvider["EmbeddingProvider<br/>- OpenAI API / Local Models<br/>- Retries with Tenacity<br/>- In-memory LRU Cache"]:::comp
+    Pegasus --> SearchEngine["SearchEngine<br/>- Dispatches & executes search modes"]:::comp
+    Pegasus --> Config["PegasusConfig<br/>- Immutable configuration parameters"]:::comp
+    Pegasus --> MetadataStore["MetadataStore<br/>- SQLite DB / SQLite Row factory<br/>- FTS5 Virtual Table"]:::comp
+
+    SearchEngine --> VectorSearch["Vector Search"]:::comp
+    SearchEngine --> KeywordSearch["Keyword Search"]:::comp
+    SearchEngine --> HybridSearch["Hybrid Search (RRF)"]:::comp
+
+    VectorSearch --> VectorIndexManager["VectorIndexManager<br/>- USearch HNSW Index<br/>- Memory-mapped file support<br/>- f16/bf16 quantization"]:::comp
+    KeywordSearch --> MetadataStore
 ```
 
 ## Data Flow
 
 ### Ingestion Pipeline
 
-```
-Raw Documents
-    │
-    v
-load_sources()
-    │ (supports URLs, PDFs, TXT, MD, directories)
-    v
-PegasusDoc[]
-    │
-    v
-Pegasus.ingest()
-    │
-    ├─→ chunk_text()
-    │   │
-    │   └─→ Chunks[]
-    │
-    ├─→ EmbeddingProvider.embed()
-    │   │
-    │   └─→ Embeddings[][]
-    │
-    ├─→ for each (chunk, embedding):
-    │   │
-    │   ├─→ MetadataStore.insert_chunk()
-    │   │   │ (dedup by content_hash)
-    │   │   └─→ chunk_id
-    │   │
-    │   └─→ VectorIndexManager.add(chunk_id, embedding)
-    │
-    └─→ VectorIndexManager.save()
-        └─→ Index written to disk
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Developer
+    participant P as Pegasus (Orchestrator)
+    participant L as loaders (load_sources)
+    participant C as chunking (chunk_text)
+    participant E as EmbeddingProvider (embed)
+    participant DB as MetadataStore (SQLite)
+    participant idx as VectorIndexManager (USearch)
 
-Results:
-- DB: chunks table + FTS5 index
-- Index: HNSW index file
+    Developer->>P: ingest(sources, corpus)
+    P->>L: load_sources()
+    L-->>P: PegasusDoc[]
+    loop For each doc
+        P->>C: chunk_text(doc.text)
+        C-->>P: chunks[]
+        P->>E: embed(chunks)
+        E-->>P: embeddings[]
+        loop For each chunk + embedding
+            P->>DB: insert_chunk(chunk_record)
+            Note over DB: Dedupes by SHA256 content_hash
+            DB-->>P: chunk_id
+            P->>idx: add(chunk_id, embedding)
+        end
+    end
+    P->>idx: save()
+    Note over idx: Serializes HNSW to disk (.usearch)
+    P-->>Developer: stats (chunks, skipped, docs)
 ```
 
 ### Search Pipeline
 
-```
-Query String
-    │
-    v
-Pegasus.search(mode="vector"|"keyword"|"hybrid")
-    │
-    ├─→ mode=="vector"?
-    │   │
-    │   └─→ SearchEngine.vector_search()
-    │       │
-    │       ├─→ EmbeddingProvider.embed(query)
-    │       │   └─→ query_embedding
-    │       │
-    │       ├─→ VectorIndexManager.search()
-    │       │   └─→ Matches[] (k nearest)
-    │       │
-    │       ├─→ for each match:
-    │       │   ├─→ MetadataStore.get_chunk(id)
-    │       │   ├─→ Apply filters (corpus, metadata)
-    │       │   └─→ Convert distance → similarity
-    │       │
-    │       └─→ SearchResult[] (sorted by score)
-    │
-    ├─→ mode=="keyword"?
-    │   │
-    │   └─→ SearchEngine.keyword_search()
-    │       │
-    │       ├─→ MetadataStore.search_fts(query)
-    │       │   └─→ Rows[] (BM25 ranked)
-    │       │
-    │       ├─→ for each row:
-    │       │   ├─→ Apply filters
-    │       │   └─→ Normalize FTS5 rank → score
-    │       │
-    │       └─→ SearchResult[]
-    │
-    └─→ mode=="hybrid"?
-        │
-        └─→ SearchEngine.hybrid_search()
-            │
-            ├─→ vector_results = vector_search(k*2)
-            ├─→ keyword_results = keyword_search(k*2)
-            │
-            ├─→ Merge with RRF:
-            │   │
-            │   ├─→ rank_vector = {chunk_id: position}
-            │   ├─→ rank_keyword = {chunk_id: position}
-            │   │
-            │   └─→ for each unique chunk:
-            │       rrf_score = α/(60+v_rank) + (1-α)/(60+k_rank)
-            │
-            └─→ SearchResult[] (top k by RRF score)
+```mermaid
+flowchart TD
+    Query([Query String]) --> Search[Pegasus.search]
+    Search --> ModeCheck{Check Mode}
 
-Results: List[SearchResult]
+    %% Vector Search Branch
+    ModeCheck -- "vector" --> VecSearch[SearchEngine.vector_search]
+    VecSearch --> VecEmbed[EmbeddingProvider.embed query] --> QueryVector[Query Vector]
+    QueryVector --> IndexSearch[VectorIndexManager.search] --> HNSWMatches[HNSW Matches k nearest]
+    HNSWMatches --> FetchMetadata[MetadataStore.get_chunk for matches]
+    FetchMetadata --> FilterMetadata{Apply filters?}
+    FilterMetadata -- Yes --> FilterPass{Passes filter_fn?}
+    FilterMetadata -- No --> NormaliseDist[Convert distance to similarity 0-1]
+    FilterPass -- Yes --> NormaliseDist
+    FilterPass -- No --> DiscardVec[Discard chunk]
+    NormaliseDist --> ReturnVec[SearchResult[] sorted by score]
+
+    %% Keyword Search Branch
+    ModeCheck -- "keyword" --> KeySearch[SearchEngine.keyword_search]
+    KeySearch --> EscapedQuery[escape_fts5_query]
+    EscapedQuery --> FTSSearch[MetadataStore.search_fts] --> Rows[SQLite FTS5 Rows BM25 ranked]
+    Rows --> FilterFTS{Apply filters?}
+    FilterFTS -- Yes --> FilterPassFTS{Passes filter_fn?}
+    FilterFTS -- No --> NormalizeRank[Normalize negative rank score]
+    FilterPassFTS -- Yes --> NormalizeRank
+    FilterPassFTS -- No --> DiscardFTS[Discard chunk]
+    NormalizeRank --> ReturnKey[SearchResult[]]
+
+    %% Hybrid Search Branch
+    ModeCheck -- "hybrid" --> Hybrid[SearchEngine.hybrid_search]
+    Hybrid --> CallVec[vector_search k * 2]
+    Hybrid --> CallKey[keyword_search k * 2]
+    CallVec --> RRF[Reciprocal Rank Fusion RRF]
+    CallKey --> RRF
+    RRF --> CalcRRF[Score = alpha / 60+v_rank + 1-alpha / 60+k_rank]
+    CalcRRF --> SortRRF[Sort and return top k] --> ReturnHybrid[SearchResult[]]
 ```
 
 ## Thread Safety
