@@ -115,7 +115,7 @@ flowchart TD
     FilterMetadata -- No --> NormaliseDist[Convert distance to similarity 0-1]
     FilterPass -- Yes --> NormaliseDist
     FilterPass -- No --> DiscardVec[Discard chunk]
-    NormaliseDist --> ReturnVec[SearchResult[] sorted by score]
+    NormaliseDist --> ReturnVec["SearchResult list sorted by score"]
 
     %% Keyword Search Branch
     ModeCheck -- "keyword" --> KeySearch[SearchEngine.keyword_search]
@@ -126,7 +126,7 @@ flowchart TD
     FilterFTS -- No --> NormalizeRank[Normalize negative rank score]
     FilterPassFTS -- Yes --> NormalizeRank
     FilterPassFTS -- No --> DiscardFTS[Discard chunk]
-    NormalizeRank --> ReturnKey[SearchResult[]]
+    NormalizeRank --> ReturnKey["SearchResult list"]
 
     %% Hybrid Search Branch
     ModeCheck -- "hybrid" --> Hybrid[SearchEngine.hybrid_search]
@@ -135,7 +135,7 @@ flowchart TD
     CallVec --> RRF[Reciprocal Rank Fusion RRF]
     CallKey --> RRF
     RRF --> CalcRRF[Score = alpha / 60+v_rank + 1-alpha / 60+k_rank]
-    CalcRRF --> SortRRF[Sort and return top k] --> ReturnHybrid[SearchResult[]]
+    CalcRRF --> SortRRF["Sort and return top k"] --> ReturnHybrid["SearchResult list"]
 ```
 
 ## Thread Safety
