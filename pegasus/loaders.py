@@ -4,13 +4,13 @@ from pathlib import Path
 from typing import List, Sequence, Union
 from urllib.parse import urlparse
 
-from langchain_core.documents import Document as LCDocument
 from langchain_community.document_loaders import (
-    TextLoader,
-    PyMuPDFLoader,
-    WebBaseLoader,
     DirectoryLoader,
+    PyMuPDFLoader,
+    TextLoader,
+    WebBaseLoader,
 )
+from langchain_core.documents import Document as LCDocument
 
 from .models import PegasusDoc
 
@@ -30,18 +30,18 @@ def load_sources(
 ) -> List[PegasusDoc]:
     """
     Load documents from mixed sources (URLs, directories, files).
-    
+
     Supported:
     - URLs: WebBaseLoader (BeautifulSoup-based HTML extraction)
     - Directories: Recursive loading of .txt/.md/.mdx/.pdf files
     - Files: Direct loading based on extension
-    
+
     Args:
         sources: Single source or list of sources (URLs, paths, directories)
         recursive: Recursively scan directories
         autodetect_encoding: Auto-detect text file encoding
         pdf_extract_images: Extract images from PDFs (requires extra deps)
-    
+
     Returns:
         List of PegasusDoc objects
     """
@@ -96,13 +96,15 @@ def load_sources(
         if not path.exists():
             print(f"Warning: File not found: {src}")
             continue
-            
+
         ext = path.suffix.lower()
         try:
             if ext == ".pdf":
                 lc_docs.extend(PyMuPDFLoader(str(path), extract_images=pdf_extract_images).load())
             else:
-                lc_docs.extend(TextLoader(str(path), autodetect_encoding=autodetect_encoding).load())
+                lc_docs.extend(
+                    TextLoader(str(path), autodetect_encoding=autodetect_encoding).load()
+                )
         except Exception as e:
             print(f"Warning: Failed to load {src}: {e}")
 

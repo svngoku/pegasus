@@ -24,11 +24,8 @@ if not os.environ.get("OPENAI_API_KEY"):
     exit(1)
 
 from pegasus import (
-    Pegasus,
-    PegasusConfig,
     PegasusDoc,
     create_pegasus,
-    load_sources,
     get_cache,
 )
 
@@ -37,18 +34,18 @@ def main():
     print("=" * 60)
     print("Example 1: Basic RAG Pipeline")
     print("=" * 60)
-    
+
     # ============================================================
     # Step 1: Create Pegasus instance
     # ============================================================
     print("\n📦 Creating Pegasus instance...")
-    
+
     # Option A: Quick setup with defaults
     pegasus = create_pegasus(
         db_path="example_basic.db",
         index_path="example_basic.usearch",
     )
-    
+
     # Option B: Custom configuration
     # config = PegasusConfig(
     #     db_path="example.db",
@@ -61,21 +58,21 @@ def main():
     #     hybrid_alpha=0.7,  # 70% vector, 30% keyword
     # )
     # pegasus = Pegasus(config)
-    
+
     # ============================================================
     # Step 2: Prepare documents
     # ============================================================
     print("\n📄 Preparing documents...")
-    
+
     # Create documents programmatically
     documents = [
         PegasusDoc(
             text="""
-            Vector databases are specialized systems designed to store and query 
-            high-dimensional vectors efficiently. Unlike traditional databases that 
-            use exact matching, vector databases use approximate nearest neighbor (ANN) 
+            Vector databases are specialized systems designed to store and query
+            high-dimensional vectors efficiently. Unlike traditional databases that
+            use exact matching, vector databases use approximate nearest neighbor (ANN)
             algorithms to find similar items based on their vector representations.
-            
+
             Popular vector databases include Pinecone, Weaviate, Milvus, and Qdrant.
             Each offers different trade-offs between performance, scalability, and features.
             """,
@@ -83,13 +80,13 @@ def main():
                 "source": "knowledge_base",
                 "title": "Introduction to Vector Databases",
                 "category": "databases",
-            }
+            },
         ),
         PegasusDoc(
             text="""
-            RAG (Retrieval-Augmented Generation) is a technique that enhances LLM responses 
+            RAG (Retrieval-Augmented Generation) is a technique that enhances LLM responses
             by retrieving relevant context from external knowledge sources. The process involves:
-            
+
             1. Document Chunking: Split documents into manageable pieces
             2. Embedding Generation: Convert text chunks to vector representations
             3. Vector Storage: Store embeddings in a vector database
@@ -99,61 +96,61 @@ def main():
             7. Generation: LLM generates response with context
             """,
             metadata={
-                "source": "knowledge_base", 
+                "source": "knowledge_base",
                 "title": "RAG Architecture Overview",
                 "category": "architecture",
-            }
+            },
         ),
         PegasusDoc(
             text="""
-            HNSW (Hierarchical Navigable Small World) is an algorithm for approximate 
+            HNSW (Hierarchical Navigable Small World) is an algorithm for approximate
             nearest neighbor search. It constructs a multi-layer graph where:
-            
+
             - The bottom layer contains all vectors
             - Higher layers contain progressively fewer vectors (subset)
             - Search starts from top layer and descends
             - Each layer uses greedy search to find closest neighbors
-            
+
             Key parameters:
             - M (connectivity): Number of bi-directional links per node
             - efConstruction: Size of dynamic candidate list during index building
             - ef: Size of dynamic candidate list during search
-            
+
             HNSW provides O(log n) search complexity with high recall rates.
             """,
             metadata={
                 "source": "knowledge_base",
                 "title": "HNSW Algorithm Deep Dive",
                 "category": "algorithms",
-            }
+            },
         ),
     ]
-    
+
     print(f"   Prepared {len(documents)} documents")
-    
+
     # ============================================================
     # Step 3: Ingest documents with progress tracking
     # ============================================================
     print("\n📥 Ingesting documents...")
-    
+
     # Progress callback
     def on_progress(info):
         pct = (info["doc_index"] / info["total_docs"]) * 100
         print(f"   Progress: {info['doc_index']}/{info['total_docs']} ({pct:.0f}%)")
-    
+
     stats = pegasus.ingest(
         documents,
         corpus="knowledge_base",
         show_progress=False,
         on_progress=on_progress,
     )
-    
+
     print(f"   ✅ Ingested {stats['chunks']} chunks, skipped {stats['skipped']} duplicates")
-    
+
     # ============================================================
     # Step 4: Search examples
     # ============================================================
-    
+
     # --- Vector Search ---
     print("\n🔍 Vector Search: 'How does HNSW work?'")
     results = pegasus.search(
@@ -162,11 +159,11 @@ def main():
         mode="vector",
         corpus="knowledge_base",
     )
-    
+
     for i, r in enumerate(results, 1):
         print(f"   {i}. [{r.score:.3f}] {r.metadata.get('title', 'N/A')}")
         print(f"      {r.content[:100].strip()}...")
-    
+
     # --- Keyword Search ---
     print("\n🔍 Keyword Search: 'vector database'")
     results = pegasus.search(
@@ -175,10 +172,10 @@ def main():
         mode="keyword",
         corpus="knowledge_base",
     )
-    
+
     for i, r in enumerate(results, 1):
         print(f"   {i}. [{r.score:.3f}] {r.metadata.get('title', 'N/A')}")
-    
+
     # --- Hybrid Search (recommended) ---
     print("\n🔍 Hybrid Search: 'explain RAG retrieval process'")
     results = pegasus.search(
@@ -187,10 +184,10 @@ def main():
         mode="hybrid",
         hybrid_alpha=0.7,  # 70% vector, 30% keyword
     )
-    
+
     for i, r in enumerate(results, 1):
         print(f"   {i}. [{r.score:.3f}] {r.metadata.get('title', 'N/A')}")
-    
+
     # ============================================================
     # Step 5: Show statistics
     # ============================================================
@@ -200,12 +197,12 @@ def main():
     print(f"   Corpora: {len(stats['corpora'])}")
     for corpus in stats["corpora"]:
         print(f"     - {corpus['corpus']}: {corpus['chunks']} chunks, {corpus['docs']} docs")
-    
+
     # Cache stats
     cache_stats = get_cache().stats()
     print(f"   Cache: {cache_stats['hits']} hits, {cache_stats['misses']} misses")
     print(f"   Hit rate: {cache_stats['hit_rate']:.1%}")
-    
+
     # ============================================================
     # Step 6: Export corpus (backup)
     # ============================================================
@@ -213,16 +210,16 @@ def main():
     export_path = "knowledge_base_backup.jsonl"
     count = pegasus.export_corpus("knowledge_base", export_path)
     print(f"   ✅ Exported {count} chunks to {export_path}")
-    
+
     # ============================================================
     # Cleanup
     # ============================================================
     pegasus.close()
-    
+
     # Clean up example files
     for f in ["example_basic.db", "example_basic.usearch", export_path]:
         Path(f).unlink(missing_ok=True)
-    
+
     print("\n✅ Example complete!")
 
 

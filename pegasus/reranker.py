@@ -11,9 +11,9 @@ from .models import SearchResult
 
 class LLMReranker:
     """Re-rank search results using an LLM for improved relevance."""
-    
+
     DEFAULT_MODEL = "gpt-4o-mini"
-    
+
     RERANK_PROMPT = """You are a relevance scoring assistant. Given a query and a document chunk, rate how relevant the chunk is to answering the query.
 
 Query: {query}
@@ -37,7 +37,7 @@ Respond with ONLY a single decimal number between 0.0 and 1.0."""
     ):
         self.model = model
         self.client = OpenAI(api_key=openai_api_key or os.environ.get("OPENAI_API_KEY"))
-    
+
     @retry(
         stop=stop_after_attempt(2),
         wait=wait_exponential(multiplier=1, min=1, max=5),
@@ -56,12 +56,12 @@ Respond with ONLY a single decimal number between 0.0 and 1.0."""
                 temperature=0.0,
                 max_tokens=10,
             )
-            
+
             score_text = response.choices[0].message.content.strip()
             return float(score_text)
         except (ValueError, AttributeError):
             return 0.5  # Default score on parse error
-    
+
     def rerank(
         self,
         query: str,
@@ -70,18 +70,18 @@ Respond with ONLY a single decimal number between 0.0 and 1.0."""
     ) -> List[SearchResult]:
         """
         Re-rank search results using LLM scoring.
-        
+
         Args:
             query: The search query
             results: Initial search results
             top_n: Return only top N results (default: all)
-        
+
         Returns:
             Re-ranked list of SearchResult objects
         """
         if not results:
             return results
-        
+
         # Score each result
         scored_results = []
         for result in results:
@@ -92,15 +92,15 @@ Respond with ONLY a single decimal number between 0.0 and 1.0."""
             result.metadata["llm_score"] = llm_score
             result.metadata["original_score"] = result.score
             scored_results.append(result)
-        
+
         # Sort by new score
         scored_results.sort(key=lambda x: x.score, reverse=True)
-        
+
         if top_n:
             scored_results = scored_results[:top_n]
-        
+
         return scored_results
-    
+
     def rerank_batch(
         self,
         query: str,
@@ -109,24 +109,23 @@ Respond with ONLY a single decimal number between 0.0 and 1.0."""
     ) -> List[SearchResult]:
         """
         Re-rank using a single batched LLM call (more efficient).
-        
+
         Args:
             query: The search query
-            results: Initial search results  
+            results: Initial search results
             top_n: Return only top N results (default: all)
-        
+
         Returns:
             Re-ranked list of SearchResult objects
         """
         if not results:
             return results
-        
+
         # Build batch prompt
-        docs_text = "\n\n".join([
-            f"[Doc {i+1}]: {r.content[:500]}..."
-            for i, r in enumerate(results)
-        ])
-        
+        docs_text = "\n\n".join(
+            [f"[Doc {i + 1}]: {r.content[:500]}..." for i, r in enumerate(results)]
+        )
+
         batch_prompt = f"""You are a relevance scoring assistant. Given a query and multiple document chunks, rate each chunk's relevance to answering the query.
 
 Query: {query}
@@ -137,7 +136,7 @@ Documents:
 For each document, provide a relevance score from 0.0 to 1.0.
 Respond with ONLY a comma-separated list of {len(results)} decimal numbers, one for each document in order.
 Example for 3 documents: 0.8, 0.3, 0.9"""
-        
+
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -145,10 +144,10 @@ Example for 3 documents: 0.8, 0.3, 0.9"""
                 temperature=0.0,
                 max_tokens=100,
             )
-            
+
             scores_text = response.choices[0].message.content.strip()
             scores = [float(s.strip()) for s in scores_text.split(",")]
-            
+
             # Apply scores
             for i, result in enumerate(results):
                 if i < len(scores):
@@ -157,17 +156,17 @@ Example for 3 documents: 0.8, 0.3, 0.9"""
                     result.metadata["llm_score"] = llm_score
                     result.metadata["original_score"] = result.score
                     result.score = combined_score
-        
+
         except Exception:
             # Fallback: keep original scores
             pass
-        
+
         # Sort by new score
         results.sort(key=lambda x: x.score, reverse=True)
-        
+
         if top_n:
             results = results[:top_n]
-        
+
         return results
 
 
@@ -180,17 +179,17 @@ def rerank_results(
 ) -> List[SearchResult]:
     """
     Convenience function to re-rank search results.
-    
+
     Args:
         query: Search query
         results: Initial search results
         model: LLM model for re-ranking
         top_n: Return only top N results
         batch: Use batched scoring (more efficient)
-    
+
     Returns:
         Re-ranked results
-    
+
     Example:
         >>> results = pegasus.search("authentication", k=20)
         >>> reranked = rerank_results("How to set up OAuth2?", results, top_n=5)

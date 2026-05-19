@@ -1,5 +1,7 @@
+# ruff: noqa: E402
 # Set USER_AGENT early to suppress langchain warning
 import os as _os
+
 if not _os.environ.get("USER_AGENT"):
     _os.environ["USER_AGENT"] = "pegasus-rag/2.1.0"
 del _os
@@ -33,31 +35,31 @@ References:
 - HNSW Algorithm: https://arxiv.org/abs/1603.09320
 """
 
-from .config import PegasusConfig
-from .models import PegasusDoc, SearchResult
-from .loaders import load_sources
 from .chunking import chunk_text
+from .config import PegasusConfig
 from .embeddings import (
-    EmbeddingProvider,
     BaseEmbeddingProvider,
+    EmbeddingProvider,
     HuggingFaceEmbedding,
     JinaEmbedding,
     create_embedding_provider,
     get_cache,
 )
 from .index import VectorIndexManager
-from .storage import MetadataStore
-from .search import SearchEngine
-from .pegasus import Pegasus, create_pegasus
-from .reranker import LLMReranker, rerank_results
 from .integration import (
+    EmbeddingConfig,
     PegasusClient,
     PegasusClientConfig,
-    EmbeddingConfig,
+    check_installation,
     create_client,
     quick_search,
-    check_installation,
 )
+from .loaders import load_sources
+from .models import PegasusDoc, SearchResult
+from .pegasus import Pegasus, create_pegasus
+from .reranker import LLMReranker, rerank_results
+from .search import SearchEngine
+from .storage import MetadataStore
 
 __version__ = "2.1.0"
 __all__ = [
